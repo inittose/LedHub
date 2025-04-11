@@ -1,23 +1,36 @@
 #include <Arduino.h>
 #include <GyverHub.h>
 
-// put function declarations here:
-int myFunction(int, int);
+void WiFiConnect(const String& ssid, const String& password);
+void WiFiDistribution(const String& netName);
 
-void setup() {
-  // put your setup code here, to run once:
+void setup()
+{
   Serial.begin(115200);
-  int result = myFunction(2, 3);
+  WiFiDistribution("I'm_esp8266");
 }
 
-void loop() {
-  // put your main code here, to run repeatedly:
-
+void loop()
+{
   Serial.println("Hello!");
   delay(1000);
 }
 
-// put function definitions here:
-int myFunction(int x, int y) {
-  return x + y;
+void WiFiConnect(const String& ssid, const String& password)
+{
+  WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid, password);
+    while (WiFi.status() != WL_CONNECTED) 
+    {
+        delay(500);
+        Serial.print(".");
+    }
+    Serial.println();
+    Serial.println(WiFi.localIP());
+}
+
+void WiFiDistribution(const String& netName)
+{
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP(netName);
 }
