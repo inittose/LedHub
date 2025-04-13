@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <GyverHub.h>
+#include "env.h"
 
 /// @brief Объект для работы с GyverHub.
 GyverHub Hub("MyDevices", "Setup", "f1eb");
@@ -99,7 +100,7 @@ void WiFiConnect(const String& ssid, const String& password)
 
 void WiFiConnect()
 {
-  WiFiConnect(WIFI_SSID, WIFI_PASS);
+  WiFiConnect(WIFI_SSID, WIFI_PASSWORD);
   Hub.update("ConnectionIcon").value(1);
 }
 
