@@ -1,23 +1,24 @@
 #include <Arduino.h>
 #include <GyverHub.h>
-#include "env.h"
+#include "env.hpp"
 
 /// @brief Объект для работы с GyverHub.
 GyverHub Hub("MyDevices", "Setup", "f1eb");
 
+const String NetworkStartMessage = "Обновите список...";
+
 /// @brief Список найденных точек доступа.
-String NetworkList = "Обновите список...";
+String NetworkList = NetworkStartMessage;
 
 /// @brief Индекс выбранной точки доступа.
-uint32_t SelectedNetwork = 0;
+int SelectedNetwork;
+
+String WiFiPassword;
 
 /// @brief Подключает к WiFi сети.
 /// @param ssid Имя точки доступа.
 /// @param password Пароль точки доступа.
 void WiFiConnect(const String& ssid, const String& password);
-
-/// @brief Подключает к WiFi сети. TODO: Назвать обработчиком.
-void WiFiConnect();
 
 /// @brief Раздает WiFi, ESP является точкой доступа. 192.168.4.1 - стандартный IP адрес ESP.
 void WiFiDistribution();
@@ -25,20 +26,31 @@ void WiFiDistribution();
 /// @brief Ищет доступные точки доступа.
 void ScanNetworks();
 
+String GetSelectedNetwork();
+
+/// @brief Вызывается при подключении к WiFi сети.
+void OnWiFiConnectionStarted()
+{
+  WiFiConnect(GetSelectedNetwork(), WiFiPassword);
+  Hub.update("ConnectionIcon").value(1);
+}
+
+
 /// @brief Вызывается при смене сети.
 void OnNetworkChanged()
 {
-  Serial.println(SelectedNetwork);
+  Serial.println(GetSelectedNetwork());
 }
 
 /// @brief Вызывается при перерисовке UI.
 /// @param builder Объект, отвечающий за отрисовку.
 void OnBuild(gh::Builder& builder)
 {
-  builder.Title("Выберите домашнюю сеть:").align(gh::Align::Center).fontSize(25);
+  builder.Title("Добро пожаловать").align(gh::Align::Center).fontSize(25);
 
   builder.Space();
 
+  builder.Title("Выберите домашнюю сеть:").align(gh::Align::Center).fontSize(25);
   if (builder.beginRow())
   {
     builder.Select_("WiFiSelect", &SelectedNetwork).size(3).noLabel(true).text(NetworkList).attach(OnNetworkChanged);
@@ -46,25 +58,19 @@ void OnBuild(gh::Builder& builder)
     builder.endRow();
   }
 
-  builder.Space();
-  
   if (builder.beginRow())
   {
     builder.Title("Пароль:").fontSize(20).align(gh::Align::Left).size(1);
-    builder.Pass().noLabel(true).size(2);
+    builder.Pass(&WiFiPassword).noLabel(true).size(2);
     builder.endRow();
   }
 
-  builder.Space();
-
-  if (builder.beginRow())
+  if (builder.beginRow()) // && NetworkList != NetworkStartMessage
   {
-    builder.Button().label("Подключится").attach(WiFiConnect);
-    builder.Icon_("ConnectionIcon").icon("f1eb").color(gh::Color(255));
+    builder.Button().label("Подключится").attach(OnWiFiConnectionStarted).disabled(NetworkList == NetworkStartMessage);
+    builder.Icon_("ConnectionIcon").icon("f1eb").color(gh::Color(255)).disabled(NetworkList == NetworkStartMessage);
     builder.endRow();
   }
-
-  
 }
 
 void setup()
@@ -98,11 +104,6 @@ void WiFiConnect(const String& ssid, const String& password)
   Serial.println(WiFi.localIP());
 }
 
-void WiFiConnect()
-{
-  WiFiConnect(WIFI_SSID, WIFI_PASSWORD);
-  Hub.update("ConnectionIcon").value(1);
-}
 
 void WiFiDistribution()
 {
@@ -127,4 +128,31 @@ void ScanNetworks()
   NetworkList = result;
   Hub.sendRefresh();
   Serial.println(result);
+}
+
+String GetSelectedNetwork()
+{
+  int counter = 0;
+  int from = -1;
+  int to = -1;
+  for (int i = 0; i < NetworkList.length(); i++)
+  {
+    if (NetworkList[i] == ';')
+    {
+      counter++;
+    }
+
+    if (counter == SelectedNetwork && from == -1)
+    {
+      from = i + 1;
+    }
+
+    if (counter == SelectedNetwork + 1)
+    {
+      to = i;
+      break;
+    }
+  }
+
+  return NetworkList.substring(from, to);
 }
