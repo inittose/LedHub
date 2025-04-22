@@ -1,9 +1,8 @@
 #include <Arduino.h>
 #include <GyverHub.h>
-#include "env.hpp"
 
 /// @brief Объект для работы с GyverHub.
-GyverHub Hub("MyDevices", "Setup", "f1eb");
+GyverHub Hub("MyDevices", "WiFiSetup", "f1eb");
 
 const String NetworkStartMessage = "Обновите список...";
 
@@ -11,9 +10,18 @@ const String NetworkStartMessage = "Обновите список...";
 String NetworkList = NetworkStartMessage;
 
 /// @brief Индекс выбранной точки доступа.
-int SelectedNetwork;
+uint8_t SelectedNetworkIndex;
+
 
 String WiFiPassword;
+
+String SelectedNetwork;
+
+String ConnectionFailed = "e55d";
+String ConnectionSucces = "e55c";
+String ConnectionIcon = "f1e6";
+
+bool WiFiConnected;
 
 /// @brief Подключает к WiFi сети.
 /// @param ssid Имя точки доступа.
@@ -26,12 +34,10 @@ void WiFiDistribution();
 /// @brief Ищет доступные точки доступа.
 void ScanNetworks();
 
-String GetSelectedNetwork();
-
 /// @brief Вызывается при подключении к WiFi сети.
 void OnWiFiConnectionStarted()
 {
-  WiFiConnect(GetSelectedNetwork(), WiFiPassword);
+  WiFiConnect(SelectedNetwork, WiFiPassword);
   Hub.update("ConnectionIcon").value(1);
 }
 
@@ -39,7 +45,17 @@ void OnWiFiConnectionStarted()
 /// @brief Вызывается при смене сети.
 void OnNetworkChanged()
 {
-  Serial.println(GetSelectedNetwork());
+  uint8_t from = 0;
+  uint8_t to = NetworkList.indexOf(';');
+  for (int i = 0; i < SelectedNetworkIndex; i++)
+  {
+    from = to + 1;
+    to = NetworkList.indexOf(';', from);
+  }
+
+  SelectedNetwork = NetworkList.substring(from, to);
+
+  Serial.println(SelectedNetwork);
 }
 
 /// @brief Вызывается при перерисовке UI.
@@ -53,7 +69,7 @@ void OnBuild(gh::Builder& builder)
   builder.Title("Выберите домашнюю сеть:").align(gh::Align::Center).fontSize(25);
   if (builder.beginRow())
   {
-    builder.Select_("WiFiSelect", &SelectedNetwork).size(3).noLabel(true).text(NetworkList).attach(OnNetworkChanged);
+    builder.Select_("WiFiSelect", &SelectedNetworkIndex).size(3).noLabel(true).text(NetworkList).attach(OnNetworkChanged);
     builder.Button().icon("f2f1").size(1).attach(ScanNetworks).noLabel(true).noTab(true).color(gh::Color(255)).align(gh::Align::Right);
     builder.endRow();
   }
@@ -67,8 +83,9 @@ void OnBuild(gh::Builder& builder)
 
   if (builder.beginRow()) // && NetworkList != NetworkStartMessage
   {
-    builder.Button().label("Подключится").attach(OnWiFiConnectionStarted).disabled(NetworkList == NetworkStartMessage);
-    builder.Icon_("ConnectionIcon").icon("f1eb").color(gh::Color(255)).disabled(NetworkList == NetworkStartMessage);
+    builder.Title("Подключиться:").fontSize(20).align(gh::Align::Left).size(3);
+    builder.Button().icon("f1e6").noLabel(true).attach(OnWiFiConnectionStarted).disabled(NetworkList == NetworkStartMessage).size(2).noTab(true);
+    builder.Icon_("ConnectionIcon", &WiFiConnected).icon(ConnectionIcon).color(gh::Color(255)).disabled(NetworkList == NetworkStartMessage).noLabel(true).noTab(true).size(1);
     builder.endRow();
   }
 }
@@ -84,6 +101,7 @@ void setup()
   
   Hub.onBuild(OnBuild);
   Hub.begin();
+  ScanNetworks();
 }
 
 void loop()
@@ -93,15 +111,76 @@ void loop()
 
 void WiFiConnect(const String& ssid, const String& password)
 {
+  WiFi.disconnect(true);
   WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) 
+  uint8_t timeout = 10;
+  uint8_t observer = 0;
+  WiFiConnected = false;
+  while (observer < timeout) 
   {
-      delay(500);
-      Serial.print(".");
+    observer++;
+    delay(500);
+    Serial.print(".");
+
+    if (WiFi.status() == WL_CONNECTED)
+    {
+      ConnectionIcon = ConnectionSucces;
+      WiFiConnected = true;
+      Serial.println();
+      Serial.println(WiFi.localIP());
+      // Hub.sendNotice("Успешное подключение");
+      // Hub.sendRefresh();
+      break;
+    }
   }
 
-  Serial.println();
-  Serial.println(WiFi.localIP());
+  if (WiFiConnected)
+  {
+    Hub.sendNotice("Успешное подключение");
+    Hub.sendRefresh();
+    return;
+  }
+  // Serial.println();
+  // Serial.println(WiFi.localIP());
+  // String noticeMessage = "Успешное подключение к ";
+  // noticeMessage += SelectedNetwork;
+  // noticeMessage += '\n';
+  // noticeMessage += WiFi.localIP();
+  // Hub.sendNotice("Успешное подключение");
+
+  String errorMessage = "Подключение не удалось: ";
+  ConnectionIcon = ConnectionFailed;
+
+  switch (WiFi.status())
+  {
+    case WL_NO_SSID_AVAIL:
+    {
+      errorMessage += "Имя сети неверное";
+      break;
+    }
+
+    case WL_CONNECT_FAILED:
+    {
+      errorMessage += "Неуспешная попытка";
+      break;
+    }
+
+    case WL_WRONG_PASSWORD:
+    {
+      errorMessage += "Пароль сети неверен";
+      break;
+    }
+
+    case WL_DISCONNECTED:
+    {
+      errorMessage += "Отключение от точки доступа";
+      break;
+    }
+  }
+
+    Serial.println();
+    Serial.println(errorMessage);
+    Hub.sendAlert(errorMessage);
 }
 
 
@@ -128,31 +207,5 @@ void ScanNetworks()
   NetworkList = result;
   Hub.sendRefresh();
   Serial.println(result);
-}
-
-String GetSelectedNetwork()
-{
-  int counter = 0;
-  int from = -1;
-  int to = -1;
-  for (int i = 0; i < NetworkList.length(); i++)
-  {
-    if (NetworkList[i] == ';')
-    {
-      counter++;
-    }
-
-    if (counter == SelectedNetwork && from == -1)
-    {
-      from = i + 1;
-    }
-
-    if (counter == SelectedNetwork + 1)
-    {
-      to = i;
-      break;
-    }
-  }
-
-  return NetworkList.substring(from, to);
+  OnNetworkChanged();
 }
